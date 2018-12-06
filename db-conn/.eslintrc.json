@@ -1,0 +1,10 @@
+{
+    "extends": ["google"],
+    "parserOptions": {"ecmaVersion": 8},
+    "plugins": ["prettier"],
+    "rules": {
+        "indent": ["error", 2],
+        "max-len": ["error", 85]
+    }
+}
+

@@ -1,0 +1,50 @@
+[
+    {
+        "type": 0,
+        "UniqueID": 1,
+        "TRX_ID": "111118100011",
+        "Subsidiary": 2,
+        "DateOfBusiness": "04/10/18",
+        "CheckNumber": 10001,
+        "KFStoreID": 3,
+        "FKEmployeeNumber": 4,
+        "FullName": "diego",
+        "Long Name": "Pizza grande",
+        "Price": 150,
+        "Quantity": 1,
+        "SalesType": "no idea",
+        "Processed": 0
+    },
+    {
+        "type": 0,
+        "UniqueID": 2,
+        "TRX_ID": "111118100011",
+        "Subsidiary": 2,
+        "DateOfBusiness": "04/10/18",
+        "CheckNumber": 10001,
+        "KFStoreID": 3,
+        "FKEmployeeNumber": 4,
+        "FullName": "diego",
+        "Long Name": "Refresco",
+        "Price": 40,
+        "Quantity": 1,
+        "SalesType": "no idea",
+        "Processed": 0
+    },
+    {
+        "type": 0,
+        "UniqueID": 2,
+        "TRX_ID": "111118100012",
+        "Subsidiary": 2,
+        "DateOfBusiness": "04/10/18",
+        "CheckNumber": 10001,
+        "KFStoreID": 3,
+        "FKEmployeeNumber": 4,
+        "FullName": "raul",
+        "Long Name": "Combo 1",
+        "Price": 250,
+        "Quantity": 1,
+        "SalesType": "no idea",
+        "Processed": 0
+    }
+]
