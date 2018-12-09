@@ -1,7 +1,10 @@
 const CHUNK_SIZE = 1000;
 const CEC_FOLDER = 1864;
-const CUSTOMER_ID = 1588;
-const TAX_CODE_ID = 5;
+
+
+const TAX_CODE_ID = '5';
+const CUSTOMER_ID = '1588';
+const DEPARTMENT_ID = '278';
 const ITEM_COLUMN_SKU = 'itemid';
 
 /**
@@ -10,7 +13,7 @@ const ITEM_COLUMN_SKU = 'itemid';
  */
 define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, file, search, http) => { // eslint-disable-line max-len
   const processDataReception = (ticketsMap) => {
-    const processedList = ticketsMap.map(t => processTicket(t));
+    const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
     logGeneral('Processed list', JSON.stringify(processedList));
 
     // const response = http.post({
@@ -27,54 +30,80 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
   const processTicket = (jsonContents) => {
     try {
-      logReception(jsonContents);
-      // const customRecordId = createCustomRecord(jsonContents);
+      const customRecordId = createCustomRecord(jsonContents);
 
+      // Invoice
       const items = obtainProducts(jsonContents.products);
-      logGeneral('ITEMS', JSON.stringify(items));
+      logGeneral('ITEMS', JSON.stringify(items.length));
       const invoiceId = createInvoiceRecord(items, jsonContents);
+      const pid = createPaymentRecord(invoiceId);
 
-      // updateCustomRecord(customRecordId, invoiceId);
+      // Validate successfull creation
+      if (!(invoiceId && pid)) {
+        throw error.create({
+          "name": "CEC_ERR_MISSING_DATA",
+          "message": "Missing data: " + JSON.stringify({
+            invoiceId: invoiceId,
+            paymentId: pid,
+          }),
+          "notifyOff": true
+        });
+      }
+
+      // Everything went all-right
+      updateCustomRecord(customRecordId, invoiceId);
       return extractName(jsonContents);
-    } catch (error) {
-      logError(error);
+    } catch (err) {
+      logGeneral('Restlet - fail', err);
     }
   };
 
   /*
-  **********************************************************************************
-  * Invoice
-  **********************************************************************************
+  ******************************************************************************
+  * Products
+  ******************************************************************************
   */
 
   const obtainProducts = (products) => {
     const skuList = products.map(function(product) {
-      return product.FKItemID;
+      return product.FKItemID.toString();
     });
     const localInfoOfSku = searchProducts(skuList);
     const productsWithAllInfo = products
-      .map((product) => Object.assign({}, product, localInfoOfSku[product.sku]))
-      .filter((product) => product.id);
+      .map((product) => Object.assign({}, product, localInfoOfSku[product.FKItemID.toString()]))
+      .filter((product) => product.internal_id && product.Quantity);
     return productsWithAllInfo;
   };
 
   const searchProducts = (skuList) => {
-    logSkuList(skuList);
+    logGeneral('SKU List', skuList);
 
-    const filters = [
-    ];
-    const columns = [
-      {name: 'type'},
-      {name: ITEM_COLUMN_SKU},
-    ];
+    let filters = [];
+    for (let i = 0; i < skuList.length; ++i) {
+      if (i !== 0) {
+        filters.push('or');
+      }
+      filters.push(['itemid', search.Operator.IS, skuList[i]]);
+    }
+
     const searchOperation = search.create({
       type: search.Type.ITEM,
       filters: filters,
-      columns: columns,
+      columns: [
+        'itemid',
+      ],
     });
 
-    const productDict = traverseSearchData(searchOperation);
-    return productDict;
+    let itemDict = {};
+    searchOperation.run().each((product) => {
+      const item = extractItem(product);
+      if (!itemDict[item.sku]) {
+        itemDict[item.sku] = item;
+      }
+      return true;
+    });
+
+    return itemDict;
   };
 
   const traverseSearchData = (searchOperation) => {
@@ -88,9 +117,9 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
         var results = resultSet.getRange(startIndex, endIndex);
         // process products
         results
-          .map(extractProduct)
+          .map(extractItem)
           .forEach((product) => {
-            logGeneral('Product', JSON.stringify(product));
+            // logGeneral('Product', JSON.stringify(product));
             if (!dict[product.sku]) {
               dict[product.sku] = product;
             }
@@ -104,40 +133,19 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
     return dict;
   };
 
-  const extractProduct = (product) => {
+  const extractItem = (product) => {
     return {
-      id: parseInt(product.id),
+      internal_id: product.id,
       type: product.getValue({name: 'type'}),
-      sku: product.getValue({name: ITEM_COLUMN_SKU}),
+      sku: product.getValue({name: 'itemid'}),
+      usebins: product.getValue({name: 'usebins'}),
     };
   };
 
-  const createInvoiceRecord = (items, payload) => {
-    try {
-      const creator = invoiceFactory({record, log});
-      creator.setInfo({
-        subsidiary: payload.Subsidiary,
-        location: payload.FKStoreID,
-        externalid: payload.TRX_ID,
-      });
-      items.forEach((item) => {
-        creator.addItem({
-          item: item.id,
-          quantity: item.quantity,
-        });
-      });
-      const invoiceId = creator.save();
-      logInvoiceSuccess(invoiceId);
-      return invoiceId;
-    } catch (error) {
-      logInvoiceError(error);
-    }
-  };
-
   /*
-  **********************************************************************************
+  ******************************************************************************
   * Custom Record
-  **********************************************************************************
+  ******************************************************************************
   */
 
   const createCustomRecord = (jsonContents) => {
@@ -152,10 +160,10 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
       });
       const customRecordId = creator.save();
 
-      logCustomRecordSuccess(customRecordId);
+      logGeneral('Custom record - ok', customRecordId);
       return customRecordId;
-    } catch (error) {
-      logCustomRecordError(error);
+    } catch (err) {
+      logGeneral('Custom record - failed', err);
     }
   };
 
@@ -181,66 +189,69 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
       },
       options: {
         enableSourcing: true,
-        ignoreMandatoryFields: false,
+        ignoreMandatoryFields: true,
       },
     });
-    logUpdateSuccess(editedRecordId);
+    logGeneral('Update custom record - ok', editedRecordId);
   };
 
   /*
-  **********************************************************************************
-  * Loggers
-  **********************************************************************************
+  ******************************************************************************
+  * Invoice
+  ******************************************************************************
   */
 
-  const logReception = (contents) => {
-    log.audit({
-      title: 'Restlet - received contents',
-      details: contents,
-    });
+  const createPaymentRecord = (invoiceId) => {
+    try {
+      const customerPayment = record.transform({
+        fromType: record.Type.INVOICE,
+        fromId: invoiceId,
+        toType: record.Type.CUSTOMER_PAYMENT,
+        isDynamic: true,
+      });
+      const customerPaymentId = customerPayment.save({
+        enableSourcing: true,
+        ignoreMandatoryFields: true,
+      });
+      logGeneral('Create Payment - ok', customerPaymentId);
+      return customerPaymentId;
+    } catch (err) {
+      logGeneral('Create Payment - fail', err);
+    }
   };
-  const logError = (error) => {
-    log.audit({
-      title: 'Restlet - fail',
-      details: error,
-    });
+
+  const createInvoiceRecord = (items, payload) => {
+    try {
+      const calculateAmount = (q, p) => (parseInt(q) * parseInt(p));
+      const creator = invoiceFactory({record, log});
+      creator.setInfo({
+        memo: payload.info.TRX_ID,
+        location: payload.info.FKStoreID.toString(), // 156
+        department: DEPARTMENT_ID,
+      });
+      logGeneral('Create Invoice', 'Adding items...');
+      items.forEach((item) => {
+        creator.addItem({
+          item: item.internal_id,
+          quantity: item.Quantity,
+          amount: calculateAmount(item.Quantity, item.Price),
+        });
+      });
+      logGeneral('Create Invoice', '... Finished');
+      const invoiceId = creator.save();
+      logGeneral('Create Invoice - ok', invoiceId);
+      return invoiceId;
+    } catch (err) {
+      logGeneral('Create Invoice - fail', err);
+    }
   };
-  const logCustomRecordSuccess = (customRecordId) => {
-    log.audit({
-      title: 'Custom record - success',
-      details: 'Custom record id: ' + customRecordId,
-    });
-  };
-  const logCustomRecordError = (error) => {
-    log.audit({
-      title: 'Custom record - fail',
-      details: error,
-    });
-  };
-  const logSkuList = (skuList) => {
-    log.audit({
-      title: 'Sku List',
-      details: skuList,
-    });
-  };
-  const logInvoiceSuccess = (invoiceId) => {
-    log.audit({
-      title: 'Invoice - success',
-      details: 'Invoice id: ' + invoiceId,
-    });
-  };
-  const logInvoiceError = (error) => {
-    log.audit({
-      title: 'Invoice - fail',
-      details: error,
-    });
-  };
-  const logUpdateSuccess = (customRecordId) => {
-    log.audit({
-      title: 'Update - success',
-      details: 'Custom record id: ' + customRecordId,
-    });
-  };
+
+  /*
+  ******************************************************************************
+  * General
+  ******************************************************************************
+  */
+
   const logGeneral = (title, msg) => {
     log.audit({
       title: title,
@@ -254,10 +265,11 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 });
 
 /*
-**********************************************************************************
+********************************************************************************
 * Utilities
-**********************************************************************************
+********************************************************************************
 */
+
 const setInfoUtil = (createdRecord, info) => {
   for (const field in info) {
     if (info.hasOwnProperty(field)) {
@@ -296,7 +308,7 @@ const customRecordFactory = ({record, log}) => {
   const customRecord = record.create({
     type: 'customrecord_cec_custom_record',
   });
-  const _log = function(text) {
+  const _log = (text) => {
     log.audit({title: 'Custom Record Factory', details: text});
   };
   return {
@@ -311,10 +323,7 @@ const customRecordFactory = ({record, log}) => {
 
 const invoiceFactory = ({record, log}) => {
   const defaultInfo = {
-    client: CUSTOMER_ID,
     custbody_efx_pos_origen: true,
-    memo: 'go_cec_invoice_test',
-    approvalstatus: 1,
   };
   const defaultItem = {
     tax_code: TAX_CODE_ID,
@@ -323,7 +332,9 @@ const invoiceFactory = ({record, log}) => {
     type: record.Type.INVOICE,
     isDynamic: true,
     defaultValues: {
-      entity: defaultInfo.client,
+      customform: '134',
+      entity: CUSTOMER_ID,
+      subsidiary: '10',
     },
   });
   const _log = function(text) {
@@ -337,7 +348,7 @@ const invoiceFactory = ({record, log}) => {
     },
     addItem: (newItem) => {
       const item = Object.assign({}, defaultItem, newItem);
-      _log(`addItem: ${JSON.stringify(item)}`);
+      // _log(`addItem: ${JSON.stringify(item)}`);
       addItemUtil(invoice, item);
     },
     save: () => saveUtil(invoice),

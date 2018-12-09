@@ -2,8 +2,10 @@
 
 var CHUNK_SIZE = 1000;
 var CEC_FOLDER = 1864;
-var CUSTOMER_ID = 1588;
-var TAX_CODE_ID = 5;
+
+var TAX_CODE_ID = '5';
+var CUSTOMER_ID = '1588';
+var DEPARTMENT_ID = '278';
 var ITEM_COLUMN_SKU = 'itemid';
 
 /**
@@ -15,6 +17,8 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
   var processDataReception = function processDataReception(ticketsMap) {
     var processedList = ticketsMap.map(function (t) {
       return processTicket(t);
+    }).filter(function (t) {
+      return t;
     });
     logGeneral('Processed list', JSON.stringify(processedList));
 
@@ -32,52 +36,80 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
   var processTicket = function processTicket(jsonContents) {
     try {
-      logReception(jsonContents);
-      // const customRecordId = createCustomRecord(jsonContents);
+      var customRecordId = createCustomRecord(jsonContents);
 
+      // Invoice
       var items = obtainProducts(jsonContents.products);
-      logGeneral('ITEMS', JSON.stringify(items));
+      logGeneral('ITEMS', JSON.stringify(items.length));
       var invoiceId = createInvoiceRecord(items, jsonContents);
+      var pid = createPaymentRecord(invoiceId);
 
-      // updateCustomRecord(customRecordId, invoiceId);
+      // Validate successfull creation
+      if (!(invoiceId && pid)) {
+        throw error.create({
+          "name": "CEC_ERR_MISSING_DATA",
+          "message": "Missing data: " + JSON.stringify({
+            invoiceId: invoiceId,
+            paymentId: pid
+          }),
+          "notifyOff": true
+        });
+      }
+
+      // Everything went all-right
+      updateCustomRecord(customRecordId, invoiceId);
       return extractName(jsonContents);
-    } catch (error) {
-      logError(error);
+    } catch (err) {
+      logGeneral('Restlet - fail', err);
     }
   };
 
   /*
-  **********************************************************************************
-  * Invoice
-  **********************************************************************************
+  ******************************************************************************
+  * Products
+  ******************************************************************************
   */
 
   var obtainProducts = function obtainProducts(products) {
     var skuList = products.map(function (product) {
-      return product.FKItemID;
+      return product.FKItemID.toString();
     });
     var localInfoOfSku = searchProducts(skuList);
     var productsWithAllInfo = products.map(function (product) {
-      return Object.assign({}, product, localInfoOfSku[product.sku]);
+      return Object.assign({}, product, localInfoOfSku[product.FKItemID.toString()]);
     }).filter(function (product) {
-      return product.id;
+      return product.internal_id && product.Quantity;
     });
     return productsWithAllInfo;
   };
 
   var searchProducts = function searchProducts(skuList) {
-    logSkuList(skuList);
+    logGeneral('SKU List', skuList);
 
     var filters = [];
-    var columns = [{ name: 'type' }, { name: ITEM_COLUMN_SKU }];
+    for (var i = 0; i < skuList.length; ++i) {
+      if (i !== 0) {
+        filters.push('or');
+      }
+      filters.push(['itemid', search.Operator.IS, skuList[i]]);
+    }
+
     var searchOperation = search.create({
       type: search.Type.ITEM,
       filters: filters,
-      columns: columns
+      columns: ['itemid']
     });
 
-    var productDict = traverseSearchData(searchOperation);
-    return productDict;
+    var itemDict = {};
+    searchOperation.run().each(function (product) {
+      var item = extractItem(product);
+      if (!itemDict[item.sku]) {
+        itemDict[item.sku] = item;
+      }
+      return true;
+    });
+
+    return itemDict;
   };
 
   var traverseSearchData = function traverseSearchData(searchOperation) {
@@ -90,8 +122,8 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
     while (count == CHUNK_SIZE) {
       var results = resultSet.getRange(startIndex, endIndex);
       // process products
-      results.map(extractProduct).forEach(function (product) {
-        logGeneral('Product', JSON.stringify(product));
+      results.map(extractItem).forEach(function (product) {
+        // logGeneral('Product', JSON.stringify(product));
         if (!dict[product.sku]) {
           dict[product.sku] = product;
         }
@@ -105,40 +137,19 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
     return dict;
   };
 
-  var extractProduct = function extractProduct(product) {
+  var extractItem = function extractItem(product) {
     return {
-      id: parseInt(product.id),
+      internal_id: product.id,
       type: product.getValue({ name: 'type' }),
-      sku: product.getValue({ name: ITEM_COLUMN_SKU })
+      sku: product.getValue({ name: 'itemid' }),
+      usebins: product.getValue({ name: 'usebins' })
     };
   };
 
-  var createInvoiceRecord = function createInvoiceRecord(items, payload) {
-    try {
-      var creator = invoiceFactory({ record: record, log: log });
-      creator.setInfo({
-        subsidiary: payload.Subsidiary,
-        location: payload.FKStoreID,
-        externalid: payload.TRX_ID
-      });
-      items.forEach(function (item) {
-        creator.addItem({
-          item: item.id,
-          quantity: item.quantity
-        });
-      });
-      var invoiceId = creator.save();
-      logInvoiceSuccess(invoiceId);
-      return invoiceId;
-    } catch (error) {
-      logInvoiceError(error);
-    }
-  };
-
   /*
-  **********************************************************************************
+  ******************************************************************************
   * Custom Record
-  **********************************************************************************
+  ******************************************************************************
   */
 
   var createCustomRecord = function createCustomRecord(jsonContents) {
@@ -153,10 +164,10 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
       });
       var customRecordId = creator.save();
 
-      logCustomRecordSuccess(customRecordId);
+      logGeneral('Custom record - ok', customRecordId);
       return customRecordId;
-    } catch (error) {
-      logCustomRecordError(error);
+    } catch (err) {
+      logGeneral('Custom record - failed', err);
     }
   };
 
@@ -182,66 +193,71 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
       },
       options: {
         enableSourcing: true,
-        ignoreMandatoryFields: false
+        ignoreMandatoryFields: true
       }
     });
-    logUpdateSuccess(editedRecordId);
+    logGeneral('Update custom record - ok', editedRecordId);
   };
 
   /*
-  **********************************************************************************
-  * Loggers
-  **********************************************************************************
+  ******************************************************************************
+  * Invoice
+  ******************************************************************************
   */
 
-  var logReception = function logReception(contents) {
-    log.audit({
-      title: 'Restlet - received contents',
-      details: contents
-    });
+  var createPaymentRecord = function createPaymentRecord(invoiceId) {
+    try {
+      var customerPayment = record.transform({
+        fromType: record.Type.INVOICE,
+        fromId: invoiceId,
+        toType: record.Type.CUSTOMER_PAYMENT,
+        isDynamic: true
+      });
+      var customerPaymentId = customerPayment.save({
+        enableSourcing: true,
+        ignoreMandatoryFields: true
+      });
+      logGeneral('Create Payment - ok', customerPaymentId);
+      return customerPaymentId;
+    } catch (err) {
+      logGeneral('Create Payment - fail', err);
+    }
   };
-  var logError = function logError(error) {
-    log.audit({
-      title: 'Restlet - fail',
-      details: error
-    });
+
+  var createInvoiceRecord = function createInvoiceRecord(items, payload) {
+    try {
+      var calculateAmount = function calculateAmount(q, p) {
+        return parseInt(q) * parseInt(p);
+      };
+      var creator = invoiceFactory({ record: record, log: log });
+      creator.setInfo({
+        memo: payload.info.TRX_ID,
+        location: payload.info.FKStoreID.toString(), // 156
+        department: DEPARTMENT_ID
+      });
+      logGeneral('Create Invoice', 'Adding items...');
+      items.forEach(function (item) {
+        creator.addItem({
+          item: item.internal_id,
+          quantity: item.Quantity,
+          amount: calculateAmount(item.Quantity, item.Price)
+        });
+      });
+      logGeneral('Create Invoice', '... Finished');
+      var invoiceId = creator.save();
+      logGeneral('Create Invoice - ok', invoiceId);
+      return invoiceId;
+    } catch (err) {
+      logGeneral('Create Invoice - fail', err);
+    }
   };
-  var logCustomRecordSuccess = function logCustomRecordSuccess(customRecordId) {
-    log.audit({
-      title: 'Custom record - success',
-      details: 'Custom record id: ' + customRecordId
-    });
-  };
-  var logCustomRecordError = function logCustomRecordError(error) {
-    log.audit({
-      title: 'Custom record - fail',
-      details: error
-    });
-  };
-  var logSkuList = function logSkuList(skuList) {
-    log.audit({
-      title: 'Sku List',
-      details: skuList
-    });
-  };
-  var logInvoiceSuccess = function logInvoiceSuccess(invoiceId) {
-    log.audit({
-      title: 'Invoice - success',
-      details: 'Invoice id: ' + invoiceId
-    });
-  };
-  var logInvoiceError = function logInvoiceError(error) {
-    log.audit({
-      title: 'Invoice - fail',
-      details: error
-    });
-  };
-  var logUpdateSuccess = function logUpdateSuccess(customRecordId) {
-    log.audit({
-      title: 'Update - success',
-      details: 'Custom record id: ' + customRecordId
-    });
-  };
+
+  /*
+  ******************************************************************************
+  * General
+  ******************************************************************************
+  */
+
   var logGeneral = function logGeneral(title, msg) {
     log.audit({
       title: title,
@@ -255,10 +271,11 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 });
 
 /*
-**********************************************************************************
+********************************************************************************
 * Utilities
-**********************************************************************************
+********************************************************************************
 */
+
 var setInfoUtil = function setInfoUtil(createdRecord, info) {
   for (var field in info) {
     if (info.hasOwnProperty(field)) {
@@ -320,10 +337,7 @@ var invoiceFactory = function invoiceFactory(_ref2) {
       log = _ref2.log;
 
   var defaultInfo = {
-    client: CUSTOMER_ID,
-    custbody_efx_pos_origen: true,
-    memo: 'go_cec_invoice_test',
-    approvalstatus: 1
+    custbody_efx_pos_origen: true
   };
   var defaultItem = {
     tax_code: TAX_CODE_ID
@@ -332,7 +346,9 @@ var invoiceFactory = function invoiceFactory(_ref2) {
     type: record.Type.INVOICE,
     isDynamic: true,
     defaultValues: {
-      entity: defaultInfo.client
+      customform: '134',
+      entity: CUSTOMER_ID,
+      subsidiary: '10'
     }
   });
   var _log = function _log(text) {
@@ -346,7 +362,7 @@ var invoiceFactory = function invoiceFactory(_ref2) {
     },
     addItem: function addItem(newItem) {
       var item = Object.assign({}, defaultItem, newItem);
-      _log('addItem: ' + JSON.stringify(item));
+      // _log(`addItem: ${JSON.stringify(item)}`);
       addItemUtil(invoice, item);
     },
     save: function save() {
