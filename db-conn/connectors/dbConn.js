@@ -5,7 +5,6 @@ const config = {
     password: '%2pWnqqY3dN1X',
     server: "189.212.124.246", // You can use 'localhost\\instance' to connect to named instance
     database: 'CECReportes',
-
     options: {
         encrypt: false // Use this if you're on Windows Azure
     },

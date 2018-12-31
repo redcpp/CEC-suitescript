@@ -14,6 +14,7 @@ var ITEM_COLUMN_SKU = 'itemid';
  */
 define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record, error, file, search, http) {
   // eslint-disable-line max-len
+
   var processDataReception = function processDataReception(ticketsMap) {
     var processedList = ticketsMap.map(function (t) {
       return processTicket(t);
@@ -21,17 +22,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
       return t;
     });
     logGeneral('Processed list', JSON.stringify(processedList));
-
-    // const response = http.post({
-    //   url: 'http://085c9c07.ngrok.io/update-db',
-    //   body: JSON.stringify(processedList),
-    //   headers: {'Content-Type': 'application/json'},
-    // });
-
-    // log.audit({
-    //   title: 'Post response',
-    //   details: response
-    // });
+    sendListToApi(processedList);
   };
 
   var processTicket = function processTicket(jsonContents) {
@@ -40,24 +31,19 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
       // Invoice
       var items = obtainProducts(jsonContents.products);
-      logGeneral('ITEMS', JSON.stringify(items.length));
+      logGeneral('ITEMS', JSON.stringify(items.map(function (i) {
+        return i.FKItemID;
+      })));
       var invoiceId = createInvoiceRecord(items, jsonContents);
       var pid = createPaymentRecord(invoiceId);
 
       // Validate successfull creation
       if (!(invoiceId && pid)) {
-        throw error.create({
-          "name": "CEC_ERR_MISSING_DATA",
-          "message": "Missing data: " + JSON.stringify({
-            invoiceId: invoiceId,
-            paymentId: pid
-          }),
-          "notifyOff": true
-        });
+        _errMissingData(invoiceId, pid);
       }
 
       // Everything went all-right
-      updateCustomRecord(customRecordId, invoiceId);
+      addInvoiceToCustomRecord(customRecordId, invoiceId);
       return extractName(jsonContents);
     } catch (err) {
       logGeneral('Restlet - fail', err);
@@ -72,20 +58,44 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
   var obtainProducts = function obtainProducts(products) {
     var skuList = products.map(function (product) {
-      return product.FKItemID.toString();
+      return product.FKItemID;
     });
-    var localInfoOfSku = searchProducts(skuList);
+
+    var localInfoOfSku = productsDict(skuList);
+
     var productsWithAllInfo = products.map(function (product) {
-      return Object.assign({}, product, localInfoOfSku[product.FKItemID.toString()]);
+      return Object.assign({}, product, localInfoOfSku[product.FKItemID]);
     }).filter(function (product) {
       return product.internal_id && product.Quantity;
     });
+
     return productsWithAllInfo;
   };
 
-  var searchProducts = function searchProducts(skuList) {
+  var productsDict = function productsDict(skuList) {
     logGeneral('SKU List', skuList);
 
+    // Search
+    var searchOperation = search.create({
+      type: search.Type.ITEM,
+      filters: filtersFromSkuList(skuList),
+      columns: ['itemid']
+    });
+
+    // Traverse search-data
+    var itemDict = {};
+    searchOperation.run().each(function (product) {
+      var item = extractItem(product);
+      if (!itemDict[item.sku]) {
+        itemDict[item.sku] = item;
+      }
+      return true; // continue iterating data
+    });
+
+    return itemDict;
+  };
+
+  var filtersFromSkuList = function filtersFromSkuList(skuList) {
     var filters = [];
     for (var i = 0; i < skuList.length; ++i) {
       if (i !== 0) {
@@ -93,56 +103,14 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
       }
       filters.push(['itemid', search.Operator.IS, skuList[i]]);
     }
-
-    var searchOperation = search.create({
-      type: search.Type.ITEM,
-      filters: filters,
-      columns: ['itemid']
-    });
-
-    var itemDict = {};
-    searchOperation.run().each(function (product) {
-      var item = extractItem(product);
-      if (!itemDict[item.sku]) {
-        itemDict[item.sku] = item;
-      }
-      return true;
-    });
-
-    return itemDict;
-  };
-
-  var traverseSearchData = function traverseSearchData(searchOperation) {
-    var dict = {};
-    var startIndex = 0;
-    var endIndex = CHUNK_SIZE;
-    var count = CHUNK_SIZE;
-    var resultSet = searchOperation.run();
-
-    while (count == CHUNK_SIZE) {
-      var results = resultSet.getRange(startIndex, endIndex);
-      // process products
-      results.map(extractItem).forEach(function (product) {
-        // logGeneral('Product', JSON.stringify(product));
-        if (!dict[product.sku]) {
-          dict[product.sku] = product;
-        }
-      });
-      // continue loop
-      startIndex = endIndex;
-      endIndex += CHUNK_SIZE;
-      count = results.length;
-    }
-
-    return dict;
+    return filters;
   };
 
   var extractItem = function extractItem(product) {
     return {
       internal_id: product.id,
-      type: product.getValue({ name: 'type' }),
       sku: product.getValue({ name: 'itemid' }),
-      usebins: product.getValue({ name: 'usebins' })
+      rate: product.getValue({ name: 'rate' })
     };
   };
 
@@ -180,11 +148,8 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
     newFile.folder = CEC_FOLDER;
     return newFile.save();
   };
-  var extractName = function extractName(contents) {
-    return contents.info.TRX_ID;
-  };
 
-  var updateCustomRecord = function updateCustomRecord(customRecordId, invoiceId) {
+  var addInvoiceToCustomRecord = function addInvoiceToCustomRecord(customRecordId, invoiceId) {
     var editedRecordId = record.submitFields({
       type: 'customrecord_cec_custom_record',
       id: customRecordId,
@@ -240,7 +205,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
         creator.addItem({
           item: item.internal_id,
           quantity: item.Quantity,
-          amount: calculateAmount(item.Quantity, item.Price)
+          rate: item.Price
         });
       });
       logGeneral('Create Invoice', '... Finished');
@@ -257,11 +222,37 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
   * General
   ******************************************************************************
   */
+  var _errMissingData = function _errMissingData(invoiceId, pid) {
+    throw error.create({
+      "name": "CEC_ERR_MISSING_DATA",
+      "message": "Missing data: " + JSON.stringify({
+        invoiceId: invoiceId,
+        paymentId: pid
+      }),
+      "notifyOff": true
+    });
+  };
+
+  var extractName = function extractName(contents) {
+    return contents.info.TRX_ID;
+  };
 
   var logGeneral = function logGeneral(title, msg) {
     log.audit({
       title: title,
       details: msg
+    });
+  };
+
+  var sendListToApi = function sendListToApi(processedList) {
+    var response = http.post({
+      url: 'http://ae06f88a.ngrok.io/update-db',
+      body: JSON.stringify(processedList),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    log.audit({
+      title: 'Post response',
+      details: response
     });
   };
 

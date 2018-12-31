@@ -5,16 +5,24 @@ const nsFetch = require('./connectors/nsFetch');
 const main = async () => {
     try {
         const conn = await dbConn.connectionFactory();
-        // const processed = await conn.updateProcessed('220918500026');
-        // console.log('#Processed:', processed);
         const json = await conn.getTicket();
         const tickets = await joinTickets(conn, json);
-        console.log('Uploading:', JSON.stringify(tickets, null, 2));
-        // const res = await nsFetch.post(tickets);
-        // console.log('Uploaded:', res);
+        console.log('Upload:', JSON.stringify(tickets, null, 2));
+        const res = await nsFetch.post(tickets);
+        console.log('Uploaded:', res);
     } catch (err) {
         console.log(err);
     }
+};
+
+const missing = (tickets) => {
+    const notFound = [ '201004', '201009', '501040', '501086', '501087' ];
+    let l = tickets[0].products
+        .filter(p => notFound.some(f => p.FKItemID === f))
+    const total = l
+        .map(p => p.PriceTaxed * p.Quantity)
+        .reduce((a,c) => a+c, 0);
+    console.log(l, total);
 };
 
 const joinTickets = async (conn, data) => {
@@ -69,10 +77,15 @@ const extractPaymentInfo = (ticket) => ({
 });
 
 const extractProductInfo = (ticket) => ({
-    Price: ticket.Price / 1.16,
+    Price: ticket.Price / 1.16 * (isPromo(ticket) ? -1 : 1),
+    PriceTaxed: ticket.Price,
     Quantity: ticket.Quantity,
-    FKItemID: ticket.FKItemID,
+    FKItemID: ticket.FKItemID.toString(),
     LongName: ticket.LongName.trim(),
 });
+
+const isPromo = (ticket) => (
+    ['PROMO','COMP'].some((s) => ticket.LongName.includes(s))
+);
 
 main();

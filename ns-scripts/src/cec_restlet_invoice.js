@@ -1,7 +1,6 @@
 const CHUNK_SIZE = 1000;
 const CEC_FOLDER = 1864;
 
-
 const TAX_CODE_ID = '5';
 const CUSTOMER_ID = '1588';
 const DEPARTMENT_ID = '278';
@@ -12,20 +11,11 @@ const ITEM_COLUMN_SKU = 'itemid';
  *@NScriptType Restlet
  */
 define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, file, search, http) => { // eslint-disable-line max-len
+
   const processDataReception = (ticketsMap) => {
     const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
     logGeneral('Processed list', JSON.stringify(processedList));
-
-    // const response = http.post({
-    //   url: 'http://085c9c07.ngrok.io/update-db',
-    //   body: JSON.stringify(processedList),
-    //   headers: {'Content-Type': 'application/json'},
-    // });
-
-    // log.audit({
-    //   title: 'Post response',
-    //   details: response
-    // });
+    sendListToApi(processedList);
   };
 
   const processTicket = (jsonContents) => {
@@ -34,24 +24,17 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
       // Invoice
       const items = obtainProducts(jsonContents.products);
-      logGeneral('ITEMS', JSON.stringify(items.length));
+      logGeneral('ITEMS', JSON.stringify(items.map(i=>i.FKItemID)));
       const invoiceId = createInvoiceRecord(items, jsonContents);
       const pid = createPaymentRecord(invoiceId);
 
       // Validate successfull creation
       if (!(invoiceId && pid)) {
-        throw error.create({
-          "name": "CEC_ERR_MISSING_DATA",
-          "message": "Missing data: " + JSON.stringify({
-            invoiceId: invoiceId,
-            paymentId: pid,
-          }),
-          "notifyOff": true
-        });
+        _errMissingData(invoiceId, pid);
       }
 
       // Everything went all-right
-      updateCustomRecord(customRecordId, invoiceId);
+      addInvoiceToCustomRecord(customRecordId, invoiceId);
       return extractName(jsonContents);
     } catch (err) {
       logGeneral('Restlet - fail', err);
@@ -66,18 +49,43 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
   const obtainProducts = (products) => {
     const skuList = products.map(function(product) {
-      return product.FKItemID.toString();
+      return product.FKItemID;
     });
-    const localInfoOfSku = searchProducts(skuList);
+
+    const localInfoOfSku = productsDict(skuList);
+
     const productsWithAllInfo = products
-      .map((product) => Object.assign({}, product, localInfoOfSku[product.FKItemID.toString()]))
+      .map((product) =>
+        Object.assign({}, product, localInfoOfSku[product.FKItemID]))
       .filter((product) => product.internal_id && product.Quantity);
+
     return productsWithAllInfo;
   };
 
-  const searchProducts = (skuList) => {
+  const productsDict = (skuList) => {
     logGeneral('SKU List', skuList);
 
+    // Search
+    const searchOperation = search.create({
+      type: search.Type.ITEM,
+      filters: filtersFromSkuList(skuList),
+      columns: ['itemid'],
+    });
+
+    // Traverse search-data
+    let itemDict = {};
+    searchOperation.run().each((product) => {
+      const item = extractItem(product);
+      if (!itemDict[item.sku]) {
+        itemDict[item.sku] = item;
+      }
+      return true; // continue iterating data
+    });
+
+    return itemDict;
+  };
+
+  const filtersFromSkuList = (skuList) => {
     let filters = [];
     for (let i = 0; i < skuList.length; ++i) {
       if (i !== 0) {
@@ -85,60 +93,14 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
       }
       filters.push(['itemid', search.Operator.IS, skuList[i]]);
     }
-
-    const searchOperation = search.create({
-      type: search.Type.ITEM,
-      filters: filters,
-      columns: [
-        'itemid',
-      ],
-    });
-
-    let itemDict = {};
-    searchOperation.run().each((product) => {
-      const item = extractItem(product);
-      if (!itemDict[item.sku]) {
-        itemDict[item.sku] = item;
-      }
-      return true;
-    });
-
-    return itemDict;
-  };
-
-  const traverseSearchData = (searchOperation) => {
-    let dict = {};
-    let startIndex = 0;
-    let endIndex = CHUNK_SIZE;
-    let count = CHUNK_SIZE;
-    let resultSet = searchOperation.run();
-
-    while (count == CHUNK_SIZE) {
-        var results = resultSet.getRange(startIndex, endIndex);
-        // process products
-        results
-          .map(extractItem)
-          .forEach((product) => {
-            // logGeneral('Product', JSON.stringify(product));
-            if (!dict[product.sku]) {
-              dict[product.sku] = product;
-            }
-          })
-        // continue loop
-        startIndex = endIndex;
-        endIndex += CHUNK_SIZE;
-        count = results.length;
-    }
-
-    return dict;
+    return filters;
   };
 
   const extractItem = (product) => {
     return {
       internal_id: product.id,
-      type: product.getValue({name: 'type'}),
       sku: product.getValue({name: 'itemid'}),
-      usebins: product.getValue({name: 'usebins'}),
+      rate: product.getValue({name: 'rate'}),
     };
   };
 
@@ -176,11 +138,8 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
     newFile.folder = CEC_FOLDER;
     return newFile.save();
   };
-  const extractName = (contents) => {
-    return contents.info.TRX_ID;
-  };
 
-  const updateCustomRecord = (customRecordId, invoiceId) => {
+  const addInvoiceToCustomRecord = (customRecordId, invoiceId) => {
     const editedRecordId = record.submitFields({
       type: 'customrecord_cec_custom_record',
       id: customRecordId,
@@ -234,7 +193,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
         creator.addItem({
           item: item.internal_id,
           quantity: item.Quantity,
-          amount: calculateAmount(item.Quantity, item.Price),
+          rate: item.Price,
         });
       });
       logGeneral('Create Invoice', '... Finished');
@@ -251,11 +210,37 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
   * General
   ******************************************************************************
   */
+  const _errMissingData = (invoiceId, pid) => {
+    throw error.create({
+      "name": "CEC_ERR_MISSING_DATA",
+      "message": "Missing data: " + JSON.stringify({
+        invoiceId: invoiceId,
+        paymentId: pid,
+      }),
+      "notifyOff": true
+    });
+  };
+
+  const extractName = (contents) => {
+    return contents.info.TRX_ID;
+  };
 
   const logGeneral = (title, msg) => {
     log.audit({
       title: title,
       details: msg,
+    });
+  };
+
+  const sendListToApi = (processedList) => {
+    const response = http.post({
+      url: 'http://ae06f88a.ngrok.io/update-db',
+      body: JSON.stringify(processedList),
+      headers: {'Content-Type': 'application/json'},
+    });
+    log.audit({
+      title: 'Post response',
+      details: response
     });
   };
 
