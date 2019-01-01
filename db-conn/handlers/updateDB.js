@@ -2,8 +2,8 @@ const dbConn = require('../connectors/dbConn');
 
 const updateDb = (conn, list) => {
     let ok = [];
-    data.forEach(async (sku) => {
-        const processedLines = await conn.updateProcessed(sku);
+    list.forEach(async (sku) => {
+        const processedLines = await conn.updateProcessed(sku, true);
         console.log('#Processed lines:', processedLines);
         ok.push(sku);
     })

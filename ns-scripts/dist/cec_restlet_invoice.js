@@ -16,6 +16,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
   // eslint-disable-line max-len
 
   var processDataReception = function processDataReception(ticketsMap) {
+    logGeneral('Received list - length', ticketsMap.length);
     var processedList = ticketsMap.map(function (t) {
       return processTicket(t);
     }).filter(function (t) {
@@ -35,7 +36,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
         return i.FKItemID;
       })));
       var invoiceId = createInvoiceRecord(items, jsonContents);
-      var pid = createPaymentRecord(invoiceId);
+      var pid = createPaymentRecord(invoiceId, extractPayment(jsonContents));
 
       // Validate successfull creation
       if (!(invoiceId && pid)) {
@@ -114,6 +115,10 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
     };
   };
 
+  var extractPayment = function extractPayment(contents) {
+    return contents.payment.TypeId;
+  };
+
   /*
   ******************************************************************************
   * Custom Record
@@ -170,13 +175,18 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
   ******************************************************************************
   */
 
-  var createPaymentRecord = function createPaymentRecord(invoiceId) {
+  var createPaymentRecord = function createPaymentRecord(invoiceId, paymentmethod) {
     try {
       var customerPayment = record.transform({
         fromType: record.Type.INVOICE,
         fromId: invoiceId,
         toType: record.Type.CUSTOMER_PAYMENT,
         isDynamic: true
+      });
+      customerPayment.setValue({
+        fieldId: 'paymentmethod',
+        value: paymentmethod,
+        ignoreFieldChange: true
       });
       var customerPaymentId = customerPayment.save({
         enableSourcing: true,
@@ -246,7 +256,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
   var sendListToApi = function sendListToApi(processedList) {
     var response = http.post({
-      url: 'http://ae06f88a.ngrok.io/update-db',
+      url: 'http://3c24f36b.ngrok.io/update-db',
       body: JSON.stringify(processedList),
       headers: { 'Content-Type': 'application/json' }
     });

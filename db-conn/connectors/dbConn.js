@@ -16,10 +16,10 @@ const ticket = (trx_id=GERARDO_TRX_ID) => (
     from dbo.XXCEC_SALES
     where TRX_ID='${trx_id}'`
 );
-const sales = (n) => (
-    `select top ${n || 1} *
+const sales = () => (
+    `select *
     from dbo.XXCEC_SALES
-    where Processed!='Y' and TRX_ID!='220918500026'`
+    where Processed!='Y'`
 );
 const payments = (trx_id) => (
     `select *
@@ -73,7 +73,7 @@ const connectionFactory = async () => {
         )
     const conn = await poolPromise;
     return {
-        getSales: (n) => processQuery(conn, sales(n)),
+        getSales: () => processQuery(conn, sales()),
         getTicket: (trx_id) => processQuery(conn, ticket(trx_id)),
         getPayments: (trx_id) => processQuery(conn, payments(trx_id)),
         updateProcessed: async (trx_id, processed) => {

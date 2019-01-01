@@ -13,6 +13,7 @@ const ITEM_COLUMN_SKU = 'itemid';
 define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, file, search, http) => { // eslint-disable-line max-len
 
   const processDataReception = (ticketsMap) => {
+    logGeneral('Received list - length', ticketsMap.length);
     const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
     logGeneral('Processed list', JSON.stringify(processedList));
     sendListToApi(processedList);
@@ -26,7 +27,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
       const items = obtainProducts(jsonContents.products);
       logGeneral('ITEMS', JSON.stringify(items.map(i=>i.FKItemID)));
       const invoiceId = createInvoiceRecord(items, jsonContents);
-      const pid = createPaymentRecord(invoiceId);
+      const pid = createPaymentRecord(invoiceId, extractPayment(jsonContents));
 
       // Validate successfull creation
       if (!(invoiceId && pid)) {
@@ -96,13 +97,15 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
     return filters;
   };
 
-  const extractItem = (product) => {
-    return {
-      internal_id: product.id,
-      sku: product.getValue({name: 'itemid'}),
-      rate: product.getValue({name: 'rate'}),
-    };
-  };
+  const extractItem = (product) => ({
+    internal_id: product.id,
+    sku: product.getValue({name: 'itemid'}),
+    rate: product.getValue({name: 'rate'}),
+  });
+
+  const extractPayment = (contents) => (
+    contents.payment.TypeId
+  );
 
   /*
   ******************************************************************************
@@ -160,13 +163,18 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
   ******************************************************************************
   */
 
-  const createPaymentRecord = (invoiceId) => {
+  const createPaymentRecord = (invoiceId, paymentmethod) => {
     try {
       const customerPayment = record.transform({
         fromType: record.Type.INVOICE,
         fromId: invoiceId,
         toType: record.Type.CUSTOMER_PAYMENT,
         isDynamic: true,
+      });
+      customerPayment.setValue({
+        fieldId: 'paymentmethod',
+        value: paymentmethod,
+        ignoreFieldChange: true,
       });
       const customerPaymentId = customerPayment.save({
         enableSourcing: true,
@@ -234,7 +242,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
   const sendListToApi = (processedList) => {
     const response = http.post({
-      url: 'http://ae06f88a.ngrok.io/update-db',
+      url: 'http://3c24f36b.ngrok.io/update-db',
       body: JSON.stringify(processedList),
       headers: {'Content-Type': 'application/json'},
     });
