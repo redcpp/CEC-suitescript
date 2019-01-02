@@ -1,17 +1,18 @@
 const sql = require('mssql');
 
+const SERVER_IP = '189.212.124.246';
+
 const config = {
     user: 'sa',
     password: '%2pWnqqY3dN1X',
-    server: "189.212.124.246", // You can use 'localhost\\instance' to connect to named instance
+    server: 'localhost', // You can use 'localhost\\instance' to connect to named instance
     database: 'CECReportes',
     options: {
         encrypt: false // Use this if you're on Windows Azure
     },
 };
 
-const GERARDO_TRX_ID = '220918500026';
-const ticket = (trx_id=GERARDO_TRX_ID) => (
+const ticket = (trx_id) => (
     `select *
     from dbo.XXCEC_SALES
     where TRX_ID='${trx_id}'`

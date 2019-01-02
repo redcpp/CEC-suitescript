@@ -1,15 +1,16 @@
 const nsrestlet = require('nsrestlet');
 
 // For OAuth (we can do NLAuth too, see documentation):
+// https://github.com/MichaelEPope/nsrestlet/blob/HEAD/tutorial.md
 const accountSettings = {
-  accountId: '4996504_SB1',
-  tokenKey: '49f0e3701569711429fcbc36005b30ad8a7f4a6a9a19326af92314e5c6cfc1bb',
-  tokenSecret: 'a3fb153e4a37b317cad6f6e4393cccc16708f8f5f7493f87b0d44d80dc3e4480',
-  consumerKey: 'edbdfa4048614a7ec9a6fc542f13d1c87093cc8bc4e8bdc773cc04b65f622351',
-  consumerSecret: '4226973f9f51d83217a64f0d24189578706949aedf81ca758556d8f81bf8308d',
+  accountId: '4996504',
+  tokenKey: 'c006559637ce91675768fe2a57873fbfd26ecb03373fd1cbbdc6711a457fe913',
+  tokenSecret: 'f4ef17b7dcf654aefd19abf0eb033da8a0af1e70d1dbde735c6128d07d780d0a',
+  consumerKey: 'cb211f7208d3d3466b3d6d7ae08a752f3d1e3f03478417b91a1ea6ed30385f35',
+  consumerSecret: '98d7cd914c7a5352066f1faa706f2e101a1919509b9015d64554fe006492e9b3',
 };
 const urlSettings = {
-  url: 'https://4996504-sb1.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=716&deploy=1',
+  url: 'https://4996504.restlets.api.netsuite.com/app/site/hosting/restlet.nl?script=856&deploy=1',
 };
 
 // create a link

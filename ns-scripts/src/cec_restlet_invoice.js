@@ -1,5 +1,6 @@
+const CEC_FOLDER = 719;
 const CHUNK_SIZE = 1000;
-const CEC_FOLDER = 1864;
+const SERVER_IP = '189.212.124.246';
 
 const TAX_CODE_ID = '5';
 const CUSTOMER_ID = '1588';
@@ -14,9 +15,9 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
   const processDataReception = (ticketsMap) => {
     logGeneral('Received list - length', ticketsMap.length);
-    const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
-    logGeneral('Processed list', JSON.stringify(processedList));
-    sendListToApi(processedList);
+    // const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
+    // logGeneral('Processed list', JSON.stringify(processedList));
+    // sendListToApi(processedList);
   };
 
   const processTicket = (jsonContents) => {
@@ -242,7 +243,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], (record, error, 
 
   const sendListToApi = (processedList) => {
     const response = http.post({
-      url: 'http://3c24f36b.ngrok.io/update-db',
+      url: `http://${SERVER_IP}:3000/update-db`,
       body: JSON.stringify(processedList),
       headers: {'Content-Type': 'application/json'},
     });
@@ -307,7 +308,7 @@ const customRecordFactory = ({record, log}) => {
   return {
     setInfo: (newInfo) => {
       const info = Object.assign({}, defaultInfo, newInfo);
-      _log(`setInfoOf: ${info.name}`);
+      // _log(`setInfoOf: ${info.name}`);
       setInfoUtil(customRecord, info);
     },
     save: () => saveUtil(customRecord),
@@ -336,7 +337,7 @@ const invoiceFactory = ({record, log}) => {
   return {
     setInfo: (newInfo) => {
       const info = Object.assign({}, defaultInfo, newInfo);
-      _log(`setInfo: ${JSON.stringify(info)}`);
+      // _log(`setInfo: ${JSON.stringify(info)}`);
       setInfoUtil(invoice, info);
     },
     addItem: (newItem) => {

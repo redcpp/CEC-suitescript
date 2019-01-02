@@ -6,14 +6,14 @@
  * @NModuleScope SameAccount
  */
 define(["N/record"], function (r) {
-    function deleteRecord(context) {
-        r.delete({
-            type: context.type,
-            id: context.id
-        });
-    }
+  var deleteRecord = function deleteRecord(ctx) {
+    r.delete({
+      type: ctx.type,
+      id: ctx.id
+    });
+  };
 
-    return {
-        each: deleteRecord
-    };
+  return {
+    each: deleteRecord
+  };
 });

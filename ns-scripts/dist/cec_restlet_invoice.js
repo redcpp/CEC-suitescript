@@ -1,7 +1,8 @@
 'use strict';
 
+var CEC_FOLDER = 719;
 var CHUNK_SIZE = 1000;
-var CEC_FOLDER = 1864;
+var SERVER_IP = '189.212.124.246';
 
 var TAX_CODE_ID = '5';
 var CUSTOMER_ID = '1588';
@@ -17,13 +18,9 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
   var processDataReception = function processDataReception(ticketsMap) {
     logGeneral('Received list - length', ticketsMap.length);
-    var processedList = ticketsMap.map(function (t) {
-      return processTicket(t);
-    }).filter(function (t) {
-      return t;
-    });
-    logGeneral('Processed list', JSON.stringify(processedList));
-    sendListToApi(processedList);
+    // const processedList = ticketsMap.map(t => processTicket(t)).filter(t => t);
+    // logGeneral('Processed list', JSON.stringify(processedList));
+    // sendListToApi(processedList);
   };
 
   var processTicket = function processTicket(jsonContents) {
@@ -256,7 +253,7 @@ define(['N/record', 'N/error', 'N/file', 'N/search', 'N/http'], function (record
 
   var sendListToApi = function sendListToApi(processedList) {
     var response = http.post({
-      url: 'http://3c24f36b.ngrok.io/update-db',
+      url: 'http://' + SERVER_IP + '/update-db',
       body: JSON.stringify(processedList),
       headers: { 'Content-Type': 'application/json' }
     });
@@ -324,7 +321,7 @@ var customRecordFactory = function customRecordFactory(_ref) {
   return {
     setInfo: function setInfo(newInfo) {
       var info = Object.assign({}, defaultInfo, newInfo);
-      _log('setInfoOf: ' + info.name);
+      // _log(`setInfoOf: ${info.name}`);
       setInfoUtil(customRecord, info);
     },
     save: function save() {
@@ -358,7 +355,7 @@ var invoiceFactory = function invoiceFactory(_ref2) {
   return {
     setInfo: function setInfo(newInfo) {
       var info = Object.assign({}, defaultInfo, newInfo);
-      _log('setInfo: ' + JSON.stringify(info));
+      // _log(`setInfo: ${JSON.stringify(info)}`);
       setInfoUtil(invoice, info);
     },
     addItem: function addItem(newItem) {

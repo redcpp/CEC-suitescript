@@ -1,15 +1,20 @@
 const joinTickets = async (conn, data) => {
+    // Tickets container
     let trx_id_dict = {};
     for (let i = 0; i < data.length; ++i) {
         const d = data[i];
-        // header
+        // HEADER
+        // Get Ticket if it exists
+        // Otherwise create Ticket object
         const key = d.TRX_ID.trim();
         trx_id_dict[key] = trx_id_dict[key] || {
             info: extractGeneralInfo(d),
-            payment: biggestAmountPayment(await conn.getPayments(key), key),
+            payment: biggestAmountPayment(await conn.getPayments(key)),
             products: {},
         };
-        // products
+        // PRODUCTS
+        // Check if the product in this row is not in the Ticket yet
+        // Otherwise just increment Quantity
         const productKey = d.FKItemID;
         if (!trx_id_dict[key].products.hasOwnProperty(productKey)) {
             trx_id_dict[key].products[productKey] = extractProductInfo(d);
@@ -17,7 +22,7 @@ const joinTickets = async (conn, data) => {
             trx_id_dict[key].products[productKey].Quantity += 1;
         }
     }
-    // Dictionaries to arrays
+    // Convert Ticket dictionary container to array
     let tickets = Object.values(trx_id_dict);
     tickets.forEach((t) => {
         t.products = Object.values(t.products);
@@ -25,21 +30,21 @@ const joinTickets = async (conn, data) => {
     return tickets;
 };
 
-const biggestAmountPayment = (payments, key) => {
+const biggestAmountPayment = (payments) => {
     payments.sort((a, b) => (b.Amount - a.Amount));
     return extractPaymentInfo(payments[0] || {});
 };
 
 const extractGeneralInfo = (ticket) => ({
-    TRX_ID: ticket.TRX_ID.trim(),
+    TRX_ID: trim(ticket.TRX_ID),
     Type: ticket.type,
-    Processed: ticket.Processed.trim(),
-    SalesType: ticket.SalesType.trim(),
+    Processed: trim(ticket.Processed),
+    SalesType: trim(ticket.SalesType),
     FKStoreID: ticket.FKStoreID,
     Subsidiary: ticket.Subsidiary,
     CheckNumber: ticket.CheckNumber,
     DateOfBusiness: ticket.DateOfBusiness,
-    FullName: ticket.FullName.trim(),
+    FullName: trim(ticket.FullName),
     FKEmployeeNumber: ticket.FKEmployeeNumber,
 });
 
@@ -59,7 +64,7 @@ const extractProductInfo = (ticket) => ({
     PriceTaxed: ticket.Price,
     Quantity: ticket.Quantity,
     FKItemID: ticket.FKItemID.toString(),
-    LongName: ticket.LongName.trim(),
+    LongName: trim(ticket.LongName),
 });
 
 const trim = (str) => (

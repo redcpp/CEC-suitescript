@@ -3,15 +3,15 @@
  * @NScriptType MassUpdateScript
  * @NModuleScope SameAccount
  */
-define(["N/record"], function (r) {
-    function deleteRecord(context) {
-        r.delete({
-            type: context.type,
-            id: context.id
-        });
-    }
+define(["N/record"], (r) => {
+  const deleteRecord = (ctx) => {
+    r.delete({
+      type: ctx.type,
+      id: ctx.id
+    });
+  };
 
-    return {
-        each: deleteRecord
-    }
+  return {
+    each: deleteRecord
+  }
 });
